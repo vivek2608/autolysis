@@ -170,9 +170,9 @@ def groupmeans(data, groups, numbers,
     means = {col: bz.into(float, data[col].mean()) for col in numbers}
     # pre-create aggregation expressions (mean, count)
     agg = {number: bz.mean(data[number]) for number in numbers}
-    agg['#'] = bz.count(data)
     results = []
     for group in groups:
+        agg['#'] = bz.count(data[group])
         ave = bz.by(data[group], **agg).sort('#', ascending=False)
         ave = bz.into(pd.DataFrame, ave)
         ave.index = ave[group]
@@ -188,13 +188,13 @@ def groupmeans(data, groups, numbers,
             sorted_cats = ave[number][biggies].dropna().sort_values()
             if len(sorted_cats) < 2:
                 continue
-            lo = bz.into(list,
-                         data[number][data[group] == sorted_cats.index[0]])
-            hi = bz.into(list,
-                         data[number][data[group] == sorted_cats.index[-1]])
+            lo = data[number][data[group] == sorted_cats.index[0]]
+            cats_lo = bz.into(pd.Series, lo).replace('', np.nan)
+            hi = data[number][data[group] == sorted_cats.index[-1]]
+            cats_hi = bz.into(pd.Series, hi).replace('', np.nan)
             _, prob = ttest_ind(
-                np.ma.masked_array(lo, np.isnan(lo)),
-                np.ma.masked_array(hi, np.isnan(hi))
+                np.ma.masked_array(cats_lo, np.isnan(cats_lo)),
+                np.ma.masked_array(cats_hi, np.isnan(cats_hi))
             )
             if prob > cutoff:
                 continue
