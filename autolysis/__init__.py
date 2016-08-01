@@ -9,7 +9,6 @@ import itertools
 import numpy as np
 import blaze as bz
 import pandas as pd
-from orderedattrdict import AttrDict
 from scipy.stats.mstats import ttest_ind
 from scipy.stats import chi2_contingency
 __folder__ = os.path.split(os.path.abspath(__file__))[0]
@@ -172,7 +171,6 @@ def groupmeans(data, groups, numbers,
     # pre-create aggregation expressions (mean, count)
     agg = {number: bz.mean(data[number]) for number in numbers}
     agg['#'] = bz.count(data)
-    results = []
     for group in groups:
         ave = bz.by(data[group], **agg).sort('#', ascending=False)
         ave = bz.into(pd.DataFrame, ave)
@@ -207,19 +205,14 @@ def groupmeans(data, groups, numbers,
             )
             if prob > cutoff:
                 continue
-            results.append({
+            yield ({
                 'group': group,
                 'number': number,
-                'prob': prob,
+                'prob': float(prob),
                 'gain': sorted_cats.iloc[-1] / means[number] - 1,
-                'biggies': ave.ix[biggies][number],
-                'means': ave[[number, '#']].sort_values(by=number),
+                'biggies': ave.ix[biggies][number].to_dict(),
+                'means': ave[[number, '#']].sort_values(by=number).to_dict(orient='records'),
             })
-
-    results = pd.DataFrame(results)
-    if len(results) > 0:
-        results = results.set_index(['group', 'number'])
-    return results
 
 
 def _crosstab(index, column, values=None, correction=False):
@@ -355,7 +348,6 @@ def crosstabs(data, columns=None, values=None,
     if columns is None:
         columns = types(data)['groups']
 
-    result = AttrDict()
     parameters = ('p', 'chi2', 'dof', 'V')
     for index, column in itertools.combinations(columns, 2):
         agg_col = values if values in data.fields else column
@@ -371,21 +363,25 @@ def crosstabs(data, columns=None, values=None,
         # Remove NULL groups
         data_grouped = data_grouped.dropna()
         if data_grouped.empty:
-            result[(index, column)] = {}
-            continue
-        r = _crosstab(data_grouped[index],
-                      column=data_grouped[column],
-                      values=data_grouped['values'],
-                      correction=correction)
-        if details:
-            result[(index, column)] = {
-                'observed': r['observed'],
-                'expected': r['expected'],
-                'stats': {param: r[param] for param in parameters}
-            }
+            result = {(index, column): {}}
         else:
-            result[(index, column)] = {
-                'stats': {param: r[param] for param in parameters}
-            }
+            r = _crosstab(data_grouped[index],
+                          column=data_grouped[column],
+                          values=data_grouped['values'],
+                          correction=correction)
+            if details:
+                result = {
+                    (index, column): {
+                        'observed': r['observed'],
+                        'expected': r['expected'],
+                        'stats': {param: r[param] for param in parameters}
+                    }
+                }
+            else:
+                result = {
+                    (index, column): {
+                        'stats': {param: r[param] for param in parameters}
+                    }
+                }
 
-    return result
+        yield result
